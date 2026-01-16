@@ -1,15 +1,18 @@
 import json
+import os
 import sys
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple, Union
 
 from clang.cindex import Config
 
 Config.set_library_file(r"C:\Program Files\LLVM\bin\libclang.dll")
 
 from clang.cindex import Cursor, CursorKind, Index, TranslationUnitLoadError
+
+PathLike = Union[str, Path]
 
 
 def qualified_name(cursor: Cursor) -> str:
@@ -145,16 +148,130 @@ def write_json_summary(
     )
 
 
-def main():
+def sort_paths(items: Iterable[Path]) -> list[Path]:
+    return sorted(
+        {normalize_path(path) for path in items}, key=lambda item: item.as_posix()
+    )
 
-    project_root = Path(__file__).resolve().parent
-    src_dir = project_root / "cpp_calculator" / "src"
-    include_dir = project_root / "cpp_calculator" / "include"
 
-    source_files = sorted(src_dir.glob("*.cpp"))
-    if not source_files:
-        print("No source files found.")
-        return
+def prepare_inputs(
+    raw_targets: Iterable[PathLike],
+) -> Tuple[Optional[Path], list[Path], list[Path]]:
+    script_root = normalize_path(Path(__file__).resolve().parent)
+    cwd_root = normalize_path(Path.cwd())
+    search_roots = [script_root, cwd_root]
+
+    resolved_dirs: list[Path] = []
+    resolved_files: list[Path] = []
+    seen_dirs: set[str] = set()
+    seen_files: set[str] = set()
+
+    def add_directory(directory: Path) -> None:
+        directory = normalize_path(directory)
+        key = directory.as_posix().lower()
+        if key in seen_dirs:
+            return
+        seen_dirs.add(key)
+        resolved_dirs.append(directory)
+        for candidate in directory.rglob("*.cpp"):
+            add_file(candidate)
+
+    def add_file(file_path: Path) -> None:
+        file_path = normalize_path(file_path)
+        if file_path.suffix.lower() != ".cpp":
+            return
+        key = file_path.as_posix().lower()
+        if key in seen_files:
+            return
+        seen_files.add(key)
+        resolved_files.append(file_path)
+
+    def expand_candidate(raw: PathLike) -> None:
+        tokens: list[str | Path]
+        if isinstance(raw, Path):
+            tokens = [raw]
+        else:
+            parts = [part.strip() for part in str(raw).split(os.pathsep)]
+            tokens = [part for part in parts if part]
+            if not tokens:
+                tokens = [raw]
+
+        for token in tokens:
+            path = Path(token).expanduser()
+            normalized = normalize_path(path)
+            if normalized.exists():
+                if normalized.is_dir():
+                    add_directory(normalized)
+                elif normalized.is_file():
+                    add_file(normalized)
+                continue
+
+            located = False
+            for root in search_roots:
+                candidate = normalize_path(root / path)
+                if candidate.exists():
+                    if candidate.is_dir():
+                        add_directory(candidate)
+                    elif candidate.is_file():
+                        add_file(candidate)
+                    located = True
+                    break
+            if located:
+                continue
+
+            pattern = str(path)
+            if any(char in pattern for char in "*?"):
+                for root in search_roots:
+                    for match in root.glob(pattern):
+                        if match.is_dir():
+                            add_directory(match)
+                        elif match.is_file():
+                            add_file(match)
+                continue
+
+            name = path.name
+            if not name:
+                continue
+            for root in search_roots:
+                for match in root.rglob(name):
+                    if match.is_dir():
+                        add_directory(match)
+                    elif match.is_file():
+                        add_file(match)
+
+    for target in raw_targets:
+        expand_candidate(target)
+
+    if not resolved_files:
+        return None, [], []
+
+    root_candidates = resolved_dirs or [file.parent for file in resolved_files]
+    project_root = normalize_path(
+        Path(os.path.commonpath([str(path) for path in root_candidates]))
+    )
+
+    include_dirs: set[Path] = {project_root}
+    include_candidate = project_root / "include"
+    if include_candidate.is_dir():
+        include_dirs.add(normalize_path(include_candidate))
+    for directory in resolved_dirs:
+        include_dirs.add(directory)
+        dir_include = directory / "include"
+        if dir_include.is_dir():
+            include_dirs.add(normalize_path(dir_include))
+    for file_path in resolved_files:
+        include_dirs.add(file_path.parent)
+
+    ordered_sources = sort_paths(resolved_files)
+    ordered_includes = sort_paths(include_dirs)
+    return project_root, ordered_sources, ordered_includes
+
+
+def analyze_project(
+    project_root: Path,
+    source_files: list[Path],
+    include_dirs: list[Path],
+) -> None:
 
     index = Index.create()
 
@@ -246,13 +363,15 @@ def main():
         for child in cursor.get_children():
             visit(child, current_function_usr)
 
+    include_args = [f"-I{path.as_posix()}" for path in include_dirs]
+
     for source_file in source_files:
         try:
             tu = index.parse(
                 str(source_file),
                 args=[
                     "-std=c++17",
-                    f"-I{include_dir}",
+                    *include_args,
                 ],
             )
         except TranslationUnitLoadError as exc:
@@ -318,5 +437,23 @@ def main():
     write_json_summary(project_root, classes, free_functions, function_data)
 
 
+def main(*targets: PathLike) -> None:
+
+    raw_targets: list[PathLike]
+    if targets:
+        raw_targets = list(targets)
+    elif len(sys.argv) > 1:
+        raw_targets = sys.argv[1:]
+    else:
+        raw_targets = [Path(__file__).resolve().parent]
+
+    project_root, source_files, include_dirs = prepare_inputs(raw_targets)
+    if not project_root or not source_files:
+        print("No source files found.")
+        return
+
+    analyze_project(project_root, source_files, include_dirs)
+
+
 if __name__ == "__main__":
-    main()
+    main(*sys.argv[1:])
