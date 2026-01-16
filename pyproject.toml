@@ -8,6 +8,7 @@ dependencies = [
     "clang>=21.1.7",
     "cppdep>=0.2.4",
     "matplotlib>=3.10.8",
+    "neo4j>=6.1.0",
     "networkx>=3.6.1",
     "repomap-suite>=0.1.4",
 ]
