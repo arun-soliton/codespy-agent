@@ -160,7 +160,7 @@ def print_analysis_results(
                 for callee_usr, callee_name in sorted(calls, key=lambda item: item[1]):
                     if callee_usr and callee_usr in function_data:
                         callee_info = function_data[callee_usr]
-                        location = f"{callee_info['file']}:{callee_info['line']}"
+                        location = f"{callee_info['file']}:{callee_info['start_line']}-{callee_info['end_line']}"
                         print(f"      - {callee_name} [{location}]")
                     else:
                         print(f"      - {callee_name} [external]")
@@ -183,7 +183,7 @@ def print_analysis_results(
                 for callee_usr, callee_name in sorted(calls, key=lambda item: item[1]):
                     if callee_usr and callee_usr in function_data:
                         callee_info = function_data[callee_usr]
-                        location = f"{callee_info['file']}:{callee_info['line']}"
+                        location = f"{callee_info['file']}:{callee_info['start_line']}-{callee_info['end_line']}"
                         print(f"    - {callee_name} [{location}]")
                     else:
                         print(f"    - {callee_name} [external]")
@@ -223,7 +223,8 @@ def write_json_summary(
                     entry["external"] = False
                     entry["location"] = {
                         "file": callee_info["file"],
-                        "line": callee_info["line"],
+                        "start_line": callee_info["start_line"],
+                        "end_line": callee_info["end_line"],
                     }
                 calls_payload.append(entry)
 
@@ -233,7 +234,8 @@ def write_json_summary(
                     "qualified": info["qualified"],
                     "location": {
                         "file": info["file"],
-                        "line": info["line"],
+                        "start_line": info["start_line"],
+                        "end_line": info["end_line"],
                     },
                     "calls": calls_payload,
                 }
@@ -267,7 +269,8 @@ def write_json_summary(
                 entry["external"] = False
                 entry["location"] = {
                     "file": callee_info["file"],
-                    "line": callee_info["line"],
+                    "start_line": callee_info["start_line"],
+                    "end_line": callee_info["end_line"],
                 }
             calls_payload.append(entry)
 
@@ -277,7 +280,8 @@ def write_json_summary(
                 "qualified": info["qualified"],
                 "location": {
                     "file": info["file"],
-                    "line": info["line"],
+                    "start_line": info["start_line"],
+                    "end_line": info["end_line"],
                 },
                 "calls": calls_payload,
             }
@@ -322,8 +326,8 @@ def create_analysis_visitors(
     """
     function_kinds = {
         CursorKind.CXX_METHOD,
-        CursorKind.CONSTRUCTOR,
-        CursorKind.DESTRUCTOR,
+        # CursorKind.CONSTRUCTOR,
+        # CursorKind.DESTRUCTOR,
         CursorKind.FUNCTION_TEMPLATE,
         CursorKind.FUNCTION_DECL,
     }
@@ -340,7 +344,8 @@ def create_analysis_visitors(
                 "qualified": qualified_name(cursor),
                 "simple": cursor.spelling or cursor.displayname or "<anonymous>",
                 "file": relative_to_project(file_path, project_root),
-                "line": cursor.location.line,
+                "start_line": cursor.extent.start.line,
+                "end_line": cursor.extent.end.line,
                 "calls": set(),
                 "description": extract_comment_text(cursor),
             }
