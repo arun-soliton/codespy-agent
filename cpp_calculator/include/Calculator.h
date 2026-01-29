@@ -9,6 +9,9 @@ private:
     double currentValue;
     std::string lastOperation;
     
+    // Private helper function
+    bool isPositive(double value) const;
+    
 public:
     // Constructor
     Calculator();
@@ -29,6 +32,7 @@ public:
     
     // Utility
     void checkIfResultIsEven();
+    void checkIfPositive();
 };
 
 #endif // CALCULATOR_H

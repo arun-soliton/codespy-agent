@@ -112,3 +112,26 @@ void Calculator::checkIfResultIsEven() {
         std::cout << "Current value " << intValue << " is odd" << std::endl;
     }
 }
+
+/**
+ * @brief Helper function to check if a value is positive
+ * @param value The value to check
+ * @return true if value is greater than 0, false otherwise
+ */
+bool Calculator::isPositive(double value) const {
+    return value > 0;
+}
+
+/**
+ * @brief Checks if the current result is positive
+ * Calls the helper function isPositive and prints the result
+ */
+void Calculator::checkIfPositive() {
+    if (isPositive(currentValue)) {
+        std::cout << "Current value " << currentValue << " is positive" << std::endl;
+    } else if (currentValue == 0) {
+        std::cout << "Current value is zero" << std::endl;
+    } else {
+        std::cout << "Current value " << currentValue << " is negative" << std::endl;
+    }
+}
